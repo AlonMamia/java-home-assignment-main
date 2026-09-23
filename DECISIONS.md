@@ -282,6 +282,8 @@ private LeaveRequest approveInternal(Long leaveRequestId) { /* הנעילות + 
 
 ## 3.7 Frontend — טופס בקשת חופשה (`LeaveRequestFormComponent`)
 
+> **עדכון מאוחר יותר, לפני סעיף 8:** הרכיב `LeaveRequestFormComponent` המתואר בסעיף הזה (Reactive Forms, שני ה-validators, המודרניזציה ל-Signals) **אינו קיים כיום בקוד** — נבדק בפועל מול ה-working tree וה-`git log`: `frontend/src/app/leave-requests/` מכיל היום רק את ה-POC המקורי (`any[]`, `type == 0`/`status == 1`, `approve()` עם reload מלא, וההערה `<!-- TODO (candidate): add the "new request" form here -->` בטמפלט), ותיקיית `leave-request-form/` קיימת אך ריקה. כלומר העבודה שתועדה כאן בוצעה במקור אך נדחתה/הוסרה בשלב מסוים ולא הגיעה ל-commit, ותיעוד הסעיף הזה נשאר כרשומה היסטורית של מה שבוצע אז — לא כתיאור של המצב הנוכחי בפועל. **סעיף 8 למטה מתעד את המצב הנוכחי בפועל (חזרה ל-POC המקורי) ואת תוכנית ההמשך.**
+
 ### 3.7.1 הרכיב המקורי
 נבנה רכיב standalone חדש, `LeaveRequestFormComponent` (`frontend/src/app/leave-requests/leave-request-form/`), עם Reactive Forms (`FormBuilder`/`FormGroup`/`Validators`) במקום להרחיב את הטופס בתוך `LeaveRequestsComponent` עצמו. שתי ולידציות חוצות-שדות מומשו כ-validators נפרדים על ה-`FormGroup` (לא על control בודד, כי כל אחת תלויה בשני השדות `startDate`/`endDate` יחד): `dateRangeValidator` (`startDate <= endDate`) ו-`positiveDurationValidator` (משך מחושב > 0, לפי אותו חישוב inclusive שהשרת משתמש בו — `ChronoUnit.DAYS.between(start, end) + 1`). הרכיב חשוף כ"טיפש" מבחינת HTTP: הוא לא קורא ל-API בעצמו, אלא מקבל `employees`/`submitting`/`submitError` ומפיק `submitted` עם ה-payload התקין — `LeaveRequestsComponent` (ההורה) הוא זה שמבצע את קריאת ה-`POST` בפועל ומעדכן את ה-inputs האלה בהתאם.
 
@@ -306,7 +308,15 @@ private LeaveRequest approveInternal(Long leaveRequestId) { /* הנעילות + 
 **טסטים:** `leave-request-form.component.spec.ts` הותאם במלואו ל-API החדש: הגדרת inputs עוברת דרך `fixture.componentRef.setInput(...)` (לא הצבה ישירה ל-property, שכבר לא אפשרית ל-signal input), וקריאה ל-output דרך `.subscribe(...)` במקום `spyOn(component.submitted, 'emit')`. נוספו גם 3 טסטים חדשים: חשיפת `employees()` כ-signal, `hasDateRangeError()` שמתעדכן **רק** אחרי `markFieldTouched()` (מוודא שה-signal לא "מדליף" שגיאה לפני touch), ורינדור `submitError()` בפועל בטמפלט. כל 17 הטסטים (1 ב-`app.component.spec`, 16 ב-`leave-request-form.component.spec`) עוברים ב-ChromeHeadless, וגם `ng build` (production, AOT, עם תחביר ה-control flow החדש) הצליח.
 
 ## 4. על מה ויתרתי בגלל הזמן
-- ... ומה הייתי עושה עם עוד יום:
+
+* **טופס הגשת בקשת חופשה:** לא מומש UI ליצירת בקשה. נדרש טופס עם הודעות שגיאה ברורות וולידציה לסוג חופשה חובה, תאריך התחלה שאינו מאוחר מתאריך סיום, ומספר ימים שאינו שלילי. כיום קיים רק TODO בטמפלט.
+* **טיפול בפעולת האישור:** הכפתור שולח POST ומרענן את כל הרשימה. לא נוספו מצב טעינה לכפתור, משוב הצלחה, וטיפול ברור בשגיאות כגון בקשה שכבר אושרה או נדחתה. נדרש לעדכן את הרשימה או את השורה הרלוונטית לאחר הצלחה, ללא רענון עיוור וללא `alert` גנרי.
+* **שכבת Service לפרונט:** קריאות `HttpClient` מתבצעות ישירות מתוך `LeaveRequestsComponent`. נדרש לחלץ אותן ל־`LeaveRequestsService`, כך שהרכיב ינהל תצוגה ואינטראקציה והשירות ירכז את הקריאות ל־API.
+* **טיפוסים אמיתיים:** נותר שימוש ב־`any` ובהשוואות לערכים מספריים גולמיים עבור סוג וסטטוס הבקשה. נדרש להגדיר טיפוסים למודלי הבקשה והתגובה ולייצג את ערכי הסוג והסטטוס באופן מפורש.
+* **ניהול state ו־RxJS:** מצב הרשימה, הטעינה והשגיאות עדיין מנוהל ידנית ברכיב. נדרש זרם נתונים ברור לטעינת הבקשות ולפעולות עליהן, טיפול בשגיאות וניקוי subscriptions לפי הצורך, כדי למנוע דליפות זיכרון ועדכוני UI לא עקביים.
+
+שיפורים נוספים שנדחו, מעבר לדרישות המרכזיות: פירוק הרכיב לתתי־רכיבים, סינון ומיון הרשימה, pagination, שיפורי נגישות וכיסוי טסטים ייעודי לפרונט.
+
 
 ## 5. שימוש ב‑AI
 ### איפה AI עזר (כולל prompts)
