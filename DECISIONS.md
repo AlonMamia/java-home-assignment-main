@@ -282,6 +282,8 @@ private LeaveRequest approveInternal(Long leaveRequestId) { /* הנעילות + 
 
 ## 3.7 Frontend — טופס בקשת חופשה (`LeaveRequestFormComponent`)
 
+> **עדכון מאוחר יותר, לפני סעיף 8:** הרכיב `LeaveRequestFormComponent` המתואר בסעיף הזה (Reactive Forms, שני ה-validators, המודרניזציה ל-Signals) **אינו קיים כיום בקוד** — נבדק בפועל מול ה-working tree וה-`git log`: `frontend/src/app/leave-requests/` מכיל היום רק את ה-POC המקורי (`any[]`, `type == 0`/`status == 1`, `approve()` עם reload מלא, וההערה `<!-- TODO (candidate): add the "new request" form here -->` בטמפלט), ותיקיית `leave-request-form/` קיימת אך ריקה. כלומר העבודה שתועדה כאן בוצעה במקור אך נדחתה/הוסרה בשלב מסוים ולא הגיעה ל-commit, ותיעוד הסעיף הזה נשאר כרשומה היסטורית של מה שבוצע אז — לא כתיאור של המצב הנוכחי בפועל. **סעיף 8 למטה מתעד את המצב הנוכחי בפועל (חזרה ל-POC המקורי) ואת תוכנית ההמשך.**
+
 ### 3.7.1 הרכיב המקורי
 נבנה רכיב standalone חדש, `LeaveRequestFormComponent` (`frontend/src/app/leave-requests/leave-request-form/`), עם Reactive Forms (`FormBuilder`/`FormGroup`/`Validators`) במקום להרחיב את הטופס בתוך `LeaveRequestsComponent` עצמו. שתי ולידציות חוצות-שדות מומשו כ-validators נפרדים על ה-`FormGroup` (לא על control בודד, כי כל אחת תלויה בשני השדות `startDate`/`endDate` יחד): `dateRangeValidator` (`startDate <= endDate`) ו-`positiveDurationValidator` (משך מחושב > 0, לפי אותו חישוב inclusive שהשרת משתמש בו — `ChronoUnit.DAYS.between(start, end) + 1`). הרכיב חשוף כ"טיפש" מבחינת HTTP: הוא לא קורא ל-API בעצמו, אלא מקבל `employees`/`submitting`/`submitError` ומפיק `submitted` עם ה-payload התקין — `LeaveRequestsComponent` (ההורה) הוא זה שמבצע את קריאת ה-`POST` בפועל ומעדכן את ה-inputs האלה בהתאם.
 
@@ -306,12 +308,106 @@ private LeaveRequest approveInternal(Long leaveRequestId) { /* הנעילות + 
 **טסטים:** `leave-request-form.component.spec.ts` הותאם במלואו ל-API החדש: הגדרת inputs עוברת דרך `fixture.componentRef.setInput(...)` (לא הצבה ישירה ל-property, שכבר לא אפשרית ל-signal input), וקריאה ל-output דרך `.subscribe(...)` במקום `spyOn(component.submitted, 'emit')`. נוספו גם 3 טסטים חדשים: חשיפת `employees()` כ-signal, `hasDateRangeError()` שמתעדכן **רק** אחרי `markFieldTouched()` (מוודא שה-signal לא "מדליף" שגיאה לפני touch), ורינדור `submitError()` בפועל בטמפלט. כל 17 הטסטים (1 ב-`app.component.spec`, 16 ב-`leave-request-form.component.spec`) עוברים ב-ChromeHeadless, וגם `ng build` (production, AOT, עם תחביר ה-control flow החדש) הצליח.
 
 ## 4. על מה ויתרתי בגלל הזמן
-- ... ומה הייתי עושה עם עוד יום:
+
+* **טופס הגשת בקשת חופשה:** לא מומש UI ליצירת בקשה. נדרש טופס עם הודעות שגיאה ברורות וולידציה לסוג חופשה חובה, תאריך התחלה שאינו מאוחר מתאריך סיום, ומספר ימים שאינו שלילי. כיום קיים רק TODO בטמפלט.
+* **טיפול בפעולת האישור:** הכפתור שולח POST ומרענן את כל הרשימה. לא נוספו מצב טעינה לכפתור, משוב הצלחה, וטיפול ברור בשגיאות כגון בקשה שכבר אושרה או נדחתה. נדרש לעדכן את הרשימה או את השורה הרלוונטית לאחר הצלחה, ללא רענון עיוור וללא `alert` גנרי.
+* **שכבת Service לפרונט:** קריאות `HttpClient` מתבצעות ישירות מתוך `LeaveRequestsComponent`. נדרש לחלץ אותן ל־`LeaveRequestsService`, כך שהרכיב ינהל תצוגה ואינטראקציה והשירות ירכז את הקריאות ל־API.
+* **טיפוסים אמיתיים:** נותר שימוש ב־`any` ובהשוואות לערכים מספריים גולמיים עבור סוג וסטטוס הבקשה. נדרש להגדיר טיפוסים למודלי הבקשה והתגובה ולייצג את ערכי הסוג והסטטוס באופן מפורש.
+* **ניהול state ו־RxJS:** מצב הרשימה, הטעינה והשגיאות עדיין מנוהל ידנית ברכיב. נדרש זרם נתונים ברור לטעינת הבקשות ולפעולות עליהן, טיפול בשגיאות וניקוי subscriptions לפי הצורך, כדי למנוע דליפות זיכרון ועדכוני UI לא עקביים.
+
+שיפורים נוספים שנדחו, מעבר לדרישות המרכזיות: פירוק הרכיב לתתי־רכיבים, סינון ומיון הרשימה, pagination, שיפורי נגישות וכיסוי טסטים ייעודי לפרונט.
+
 
 ## 5. שימוש ב‑AI
 ### איפה AI עזר (כולל prompts)
-1. prompt: "..." → מה קיבלתי ומה עשיתי איתו:
-2. ...
+
+1. **Prompt (תיקון באג יתרת החופשה):**
+   > I am working on a Spring Boot (Java) backend application with a known bug regarding vacation balance validation.
+   >
+   > Problem Description:
+   > An employee is currently able to submit a vacation request that exceeds their annual quota/balance, and the system accepts it instead of rejecting it.
+   >
+   > Please act as my developer assistant and follow these steps sequentially:
+   >
+   > 1. Analyze & Identify: Locate the bug in the backend service/controller responsible for vacation requests and balance validation. Identify where the quota check is missing or failing.
+   > 2. Write Unit/Integration Tests:
+   >    - Use the existing test setup in `backend/src/test`.
+   >    - Write a JUnit 5 test (e.g., using `@SpringBootTest` or `@WebMvcTest` / Mockito) that simulates submitting a vacation request exceeding the available balance. Verify that it fails before the fix.
+   > 3. Fix & Refactor: Implement the validation fix in the Spring Boot service/component so that requests exceeding the balance are properly rejected (e.g., throwing a custom exception or returning a BAD_REQUEST status).
+   > 4. Explanation: Provide a clear summary explaining:
+   >    - What the root cause of the bug was.
+   >    - How your code change fixed the issue.
+   >    - How the new test proves that the issue is resolved.
+   >
+   > Here is the context/relevant files:
+   > [הדבק כאן את הקוד מ-backend / את המחלקה הרלוונטית]
+
+   → **מה קיבלתי ומה עשיתי איתו:** זיהוי מדויק של הבאג ומיקומו — התנאי ב-`create()` השווה את אורך הבקשה החדשה למכסה המלאה (`days > annualQuota`) בלי לחסר ימים שכבר אושרו. תיקנתי ל-`used + days > annualQuota`, והוספתי (וידאתי שנכשל לפני התיקון) `LeaveRequestsTests.create_ExceedingRemainingBalance_IsRejected` + `create_ExactlyAtRemainingBalance_Succeeds` למקרה הגבול. פירוט מלא בסעיף 2 למעלה.
+
+2. **Prompt (endpoint האישור + concurrency):**
+   > I need to implement a new Spring Boot REST endpoint with concurrency handling and update the `DECISIONS.md` documentation.
+   >
+   > Requirement:
+   > Implement a new POST endpoint: `/api/leave-requests/{id}/approve` to approve a leave request.
+   >
+   > Business Logic & Constraints:
+   > 1. Cannot approve an already approved or rejected request → Return an appropriate error status code (e.g., 400 Bad Request or 422 Unprocessable Entity).
+   > 2. Non-existent request ID → Return 404 Not Found.
+   > 3. Concurrency / Race Condition Handling:
+   >    - Handle the scenario where two leave requests for the same employee are approved concurrently, potentially exceeding the available quota.
+   >    - Leverage PostgreSQL transactions and locking (e.g., pessimistic locking with `SELECT ... FOR UPDATE` or optimistic locking `@Version`) to ensure atomic execution and consistency.
+   >    - Describe the architectural decision and approach in `DECISIONS.md`.
+   >
+   > Please act as my developer assistant and follow these steps sequentially:
+   >
+   > 1. Analyze & Design:
+   >    - Identify where to add the new endpoint in the Spring Boot controller and service layer.
+   >    - Determine the concurrency control strategy using Spring Data JPA and PostgreSQL transactions (`@Transactional`, locking mechanisms).
+   > 2. Implementation:
+   >    - Implement the `POST /api/leave-requests/{id}/approve` endpoint.
+   >    - Add proper validation for non-existent IDs and invalid state transitions (already approved/rejected).
+   >    - Ensure thread-safe balance deduction using proper database locking.
+   > 3. Unit & Integration Tests:
+   >    - Write tests in `backend/src/test` covering:
+   >      - Successful approval and balance update.
+   >      - Approving an already approved/rejected request (expecting error status).
+   >      - Approving a non-existent request ID (expecting 404).
+   >      - A concurrent approval scenario demonstrating race condition prevention.
+   > 4. Documentation:
+   >    - Provide a section to append/insert into `DECISIONS.md` explaining the concurrency risks, chosen database transaction/locking model, and trade-offs.
+   > 5. Explanation: Briefly explain your approach, the locking strategy chosen, and how the tests verify both functional correctness and concurrency safety.
+   >
+   > Here is the context/relevant files:
+   > [הדבק כאן את הקוד מ-backend / ה-Controller וה-Service הרלוונטיים]
+
+   → **מה קיבלתי ומה עשיתי איתו:** מימוש `POST /api/leave-requests/{id}/approve` ב-`LeaveRequestService.approve()`, עם נעילה פסימית כפולה (`findByIdForUpdate` על הבקשה, ואז על העובד, בסדר קבוע) בתוך `@Transactional` יחיד, חריגות ייעודיות (404/409/400 לפי המקרה), וטסט concurrency ייעודי (`approve_ConcurrentApprovalsExceedingCombinedQuota_OnlyOneSucceeds`) שמוודא בעליל שרק אישור אחד מצליח משתי בקשות מקבילות שביחד חורגות מהמכסה. פירוט מלא, כולל ה-trade-offs מול optimistic locking, בסעיף 3 למעלה.
+
+3. **Prompt (רפקטור ל-3-Tier Architecture):**
+   > I need to refactor a Spring Boot backend application to fix architectural layering and separation of concerns.
+   >
+   > Current Problem:
+   > The Controller currently handles everything — direct database access, business logic, error handling, and request validation.
+   >
+   > Goal:
+   > Refactor the codebase to strictly adhere to standard 3-Tier Architecture without over-engineering.
+   >
+   > Please act as my senior backend software engineer and perform the following refactoring:
+   >
+   > 1. Layering Separation:
+   >    - Repository Layer: Move all database access, JPA queries, and database interactions strictly into dedicated Repository interfaces/classes (e.g., Spring Data JPA repositories).
+   >    - Service Layer: Move all business logic, validation rules, transaction management (@Transactional), and exception handling/try-catch blocks strictly into the Service layer.
+   >    - Controller Layer: Clean up the controllers so they are lightweight and strictly responsible for HTTP routing, request mapping, payload validation (@Valid), and returning appropriate HTTP response status codes/entities.
+   > 2. Principles & Guidelines:
+   >    - Keep the design clean, pragmatic, and readable (avoid over-engineering like unnecessary interfaces or wrappers if a single implementation suffices).
+   >    - Ensure existing endpoint behavior, request/response models, and contract tests remain fully compatible and unbroken.
+   > 3. Explanation & DECISIONS.md:
+   >    - Explain the architectural choices, layer responsibilities, and benefits of this refactoring clearly.
+   >    - Provide the text to update/append to `DECISIONS.md` summarizing the refactoring decision and design strategy.
+   >
+   > Here is the current Controller / backend code to refactor:
+   > [הדבק כאן את הקוד של ה-Controller או הקבצים הרלוונטיים]
+
+   → **מה קיבלתי ומה עשיתי איתו:** הפרדה מלאה של השכבות — `search()` הועבר מ-`EntityManager`/native SQL בתוך ה-controller למתודת derived-query פרמטרית ב-repository (וכך גם נסגרה פרצת SQL Injection שהייתה קיימת שם), `create()` אוחד עם `approve()` לאותו דפוס של זריקת חריגות טיפוסיות שה-`GlobalExceptionHandler` ממפה ל-HTTP, ו-`EmployeesController` קיבל `EmployeeService` במקום גישה ישירה ל-repository. נוסף `@Valid`/`@NotNull` לוולידציית payload. פירוט מלא בסעיף 3.3 למעלה.
 
 ### איפה דחיתי/תיקנתי הצעה של AI
 - מה AI הציע, למה זה היה שגוי, ומה עשיתי במקום:
