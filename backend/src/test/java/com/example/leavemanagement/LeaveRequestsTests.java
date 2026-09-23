@@ -1,18 +1,18 @@
 package com.example.leavemanagement;
 
-import com.example.leavemanagement.controller.LeaveRequestsController;
-import com.example.leavemanagement.dto.CreateLeaveRequestDto;
+import com.example.leavemanagement.dto.LeaveRequestDtoIn;
+import com.example.leavemanagement.exception.EmployeeNotFoundException;
+import com.example.leavemanagement.exception.InsufficientVacationBalanceException;
 import com.example.leavemanagement.model.Employee;
 import com.example.leavemanagement.model.LeaveRequest;
 import com.example.leavemanagement.model.LeaveStatus;
 import com.example.leavemanagement.model.LeaveType;
 import com.example.leavemanagement.repository.EmployeeRepository;
 import com.example.leavemanagement.repository.LeaveRequestRepository;
+import com.example.leavemanagement.service.LeaveRequestService;
 import org.junit.jupiter.api.Test;
-import org.springframework.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -39,8 +39,12 @@ class LeaveRequestsTests {
         registry.add("spring.datasource.password", postgres::getPassword);
     }
 
+    // Business logic lives in the service layer, which now returns the created
+    // LeaveRequest directly and throws typed exceptions on failure (HTTP-status mapping
+    // is covered separately in LeaveRequestsControllerCreateHttpTests), so these tests
+    // exercise LeaveRequestService directly rather than the controller.
     @Autowired
-    private LeaveRequestsController controller;
+    private LeaveRequestService leaveRequestService;
 
     @Autowired
     private EmployeeRepository employees;
@@ -58,17 +62,17 @@ class LeaveRequestsTests {
 
         long before = leaveRequests.count();
 
-        CreateLeaveRequestDto dto = new CreateLeaveRequestDto();
+        LeaveRequestDtoIn dto = new LeaveRequestDtoIn();
         dto.setEmployeeId(emp.getId());
         dto.setType(LeaveType.VACATION);
         dto.setStartDate(LocalDate.of(2026, 3, 1));
         dto.setEndDate(LocalDate.of(2026, 3, 3)); // 3 days, well within the quota
 
         // Act
-        ResponseEntity<?> result = controller.create(dto);
+        LeaveRequest result = leaveRequestService.create(dto);
 
         // Assert
-        assertTrue(result.getStatusCode().is2xxSuccessful());
+        assertNotNull(result.getId());
         assertEquals(before + 1, leaveRequests.count());
     }
 
@@ -92,16 +96,14 @@ class LeaveRequestsTests {
         long before = leaveRequests.count();
 
         // Act: request 5 more days, which would push the employee to 13/10 days.
-        CreateLeaveRequestDto dto = new CreateLeaveRequestDto();
+        LeaveRequestDtoIn dto = new LeaveRequestDtoIn();
         dto.setEmployeeId(emp.getId());
         dto.setType(LeaveType.VACATION);
         dto.setStartDate(LocalDate.of(2026, 3, 1));
         dto.setEndDate(LocalDate.of(2026, 3, 5)); // 5 days
 
-        ResponseEntity<?> result = controller.create(dto);
-
-        // Assert: rejected with 400, and no new request was persisted.
-        assertEquals(HttpStatus.BAD_REQUEST, result.getStatusCode());
+        // Assert: rejected, and no new request was persisted.
+        assertThrows(InsufficientVacationBalanceException.class, () -> leaveRequestService.create(dto));
         assertEquals(before, leaveRequests.count());
     }
 
@@ -126,16 +128,27 @@ class LeaveRequestsTests {
         long before = leaveRequests.count();
 
         // Act: request exactly the 2 remaining days (8 + 2 = 10, the full quota).
-        CreateLeaveRequestDto dto = new CreateLeaveRequestDto();
+        LeaveRequestDtoIn dto = new LeaveRequestDtoIn();
         dto.setEmployeeId(emp.getId());
         dto.setType(LeaveType.VACATION);
         dto.setStartDate(LocalDate.of(2026, 3, 1));
         dto.setEndDate(LocalDate.of(2026, 3, 2)); // 2 days
 
-        ResponseEntity<?> result = controller.create(dto);
+        LeaveRequest result = leaveRequestService.create(dto);
 
         // Assert: accepted, and the new request was persisted.
-        assertTrue(result.getStatusCode().is2xxSuccessful());
+        assertNotNull(result.getId());
         assertEquals(before + 1, leaveRequests.count());
+    }
+
+    @Test
+    void create_NonExistentEmployee_ReturnsNotFound() {
+        LeaveRequestDtoIn dto = new LeaveRequestDtoIn();
+        dto.setEmployeeId(999_999L);
+        dto.setType(LeaveType.VACATION);
+        dto.setStartDate(LocalDate.of(2026, 3, 1));
+        dto.setEndDate(LocalDate.of(2026, 3, 2));
+
+        assertThrows(EmployeeNotFoundException.class, () -> leaveRequestService.create(dto));
     }
 }
