@@ -104,4 +104,38 @@ class LeaveRequestsTests {
         assertEquals(HttpStatus.BAD_REQUEST, result.getStatusCode());
         assertEquals(before, leaveRequests.count());
     }
+
+    @Test
+    void create_ExactlyAtRemainingBalance_Succeeds() {
+        // Arrange: employee has a 10-day quota and has already used 8 approved days,
+        // leaving exactly 2 days of remaining balance.
+        Employee emp = new Employee();
+        emp.setName("Test Emp 3");
+        emp.setAnnualQuota(10);
+        employees.save(emp);
+
+        LeaveRequest alreadyApproved = new LeaveRequest();
+        alreadyApproved.setEmployeeId(emp.getId());
+        alreadyApproved.setType(LeaveType.VACATION);
+        alreadyApproved.setStartDate(LocalDate.of(2026, 1, 5));
+        alreadyApproved.setEndDate(LocalDate.of(2026, 1, 12)); // 8 days
+        alreadyApproved.setDays(8);
+        alreadyApproved.setStatus(LeaveStatus.APPROVED);
+        leaveRequests.save(alreadyApproved);
+
+        long before = leaveRequests.count();
+
+        // Act: request exactly the 2 remaining days (8 + 2 = 10, the full quota).
+        CreateLeaveRequestDto dto = new CreateLeaveRequestDto();
+        dto.setEmployeeId(emp.getId());
+        dto.setType(LeaveType.VACATION);
+        dto.setStartDate(LocalDate.of(2026, 3, 1));
+        dto.setEndDate(LocalDate.of(2026, 3, 2)); // 2 days
+
+        ResponseEntity<?> result = controller.create(dto);
+
+        // Assert: accepted, and the new request was persisted.
+        assertTrue(result.getStatusCode().is2xxSuccessful());
+        assertEquals(before + 1, leaveRequests.count());
+    }
 }
