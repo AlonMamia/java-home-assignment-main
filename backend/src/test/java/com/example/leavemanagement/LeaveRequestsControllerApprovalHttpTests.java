@@ -20,6 +20,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.time.LocalDate;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 // Exercises POST /api/leave-requests/{id}/approve through the real DispatcherServlet, so
@@ -75,8 +76,19 @@ class LeaveRequestsControllerApprovalHttpTests {
         LeaveRequest request = newPendingVacationRequest(
                 emp.getId(), LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 3), 3);
 
+        // Asserts the response is LeaveRequestDtoOut's shape, not the LeaveRequest
+        // entity's: same field names/values as before the DTO refactor, including the
+        // nested employee snapshot (populated here because approve() loads the entity
+        // with its EAGER employee association) - same as before the refactor.
         mockMvc.perform(post("/api/leave-requests/{id}/approve", request.getId()))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(request.getId()))
+                .andExpect(jsonPath("$.employeeId").value(emp.getId()))
+                .andExpect(jsonPath("$.employee.id").value(emp.getId()))
+                .andExpect(jsonPath("$.employee.name").value("Http Approve Emp"))
+                .andExpect(jsonPath("$.employee.annualQuota").value(20))
+                .andExpect(jsonPath("$.status").value(LeaveStatus.APPROVED.ordinal()))
+                .andExpect(jsonPath("$.days").value(3));
     }
 
     @Test

@@ -1,6 +1,6 @@
 package com.example.leavemanagement.service;
 
-import com.example.leavemanagement.dto.CreateLeaveRequestDto;
+import com.example.leavemanagement.dto.LeaveRequestDtoIn;
 import com.example.leavemanagement.exception.EmployeeNotFoundException;
 import com.example.leavemanagement.exception.InsufficientVacationBalanceException;
 import com.example.leavemanagement.exception.InvalidLeaveRequestStateException;
@@ -11,21 +11,23 @@ import com.example.leavemanagement.model.LeaveStatus;
 import com.example.leavemanagement.model.LeaveType;
 import com.example.leavemanagement.repository.EmployeeRepository;
 import com.example.leavemanagement.repository.LeaveRequestRepository;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 
-// Business logic for leave requests. create() still maps its own business exceptions to
-// a ResponseEntity locally. approve() does not: it is @Transactional, and catching an
-// exception inside a @Transactional method stops it from escaping, which stops Spring's
-// transaction interceptor from rolling back the transaction because of it - if a later
-// change added a write before the exception is thrown, that write would be committed
-// despite the request being rejected. So approve() lets its business exceptions propagate
-// to the caller; LeaveRequestsController lets them propagate further, and
-// GlobalExceptionHandler (@RestControllerAdvice) maps them to the right HTTP status.
+// All business logic, validation and exception handling for leave requests lives here.
+// Every public method either returns a plain domain object/collection or throws one of
+// the typed exceptions under com.example.leavemanagement.exception; none of them build an
+// HTTP response. GlobalExceptionHandler (@RestControllerAdvice) is what maps a thrown
+// exception to the right status code, so a thin controller never needs a try/catch.
+//
+// approve() is @Transactional and, like create(), lets its business exceptions propagate
+// instead of catching them: catching an exception inside a @Transactional method stops it
+// from escaping, which stops Spring's transaction interceptor from rolling back the
+// transaction because of it - if a later change added a write before the exception is
+// thrown, that write would be committed despite the request being rejected.
 @Service
 public class LeaveRequestService {
 
@@ -38,17 +40,16 @@ public class LeaveRequestService {
         this.employeeRepository = employeeRepository;
     }
 
-    public ResponseEntity<?> create(CreateLeaveRequestDto dto) {
-        try {
-            return ResponseEntity.ok(createInternal(dto));
-        } catch (EmployeeNotFoundException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
-        } catch (InsufficientVacationBalanceException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
+    public List<LeaveRequest> getAll() {
+        return leaveRequestRepository.findAllByOrderByStartDateDesc();
     }
 
-    private LeaveRequest createInternal(CreateLeaveRequestDto dto) {
+    // Lets the UI quickly find requests by employee name.
+    public List<LeaveRequest> search(String name) {
+        return leaveRequestRepository.findByEmployee_NameContainingIgnoreCase(name);
+    }
+
+    public LeaveRequest create(LeaveRequestDtoIn dto) {
         Employee employee = employeeRepository.findById(dto.getEmployeeId())
                 .orElseThrow(() -> new EmployeeNotFoundException("Employee not found"));
 

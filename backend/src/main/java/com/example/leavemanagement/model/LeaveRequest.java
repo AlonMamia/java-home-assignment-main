@@ -15,9 +15,10 @@ public class LeaveRequest {
     @Column(name = "employee_id", nullable = false)
     private Long employeeId;
 
-    // POC returns entities straight from the controller. The Employee <-> LeaveRequest
-    // navigation is circular; we only break the back-reference here so serialization
-    // does not recurse forever. Returning DTOs instead is a fair improvement to suggest.
+    // Controllers map to LeaveRequestDtoOut rather than serializing this entity
+    // directly (see DECISIONS.md). @JsonIgnoreProperties stays as a defensive guard
+    // against the Employee <-> LeaveRequest circular navigation and Hibernate-proxy
+    // internals, in case this entity is ever serialized directly again.
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "employee_id", insertable = false, updatable = false)
     @JsonIgnoreProperties({"leaveRequests", "hibernateLazyInitializer", "handler"})
