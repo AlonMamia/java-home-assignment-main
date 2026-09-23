@@ -16,8 +16,10 @@ public interface LeaveRequestRepository extends JpaRepository<LeaveRequest, Long
 
     List<LeaveRequest> findByEmployeeIdAndTypeAndStatus(Long employeeId, LeaveType type, LeaveStatus status);
 
-    // Row-locks the request (SELECT ... FOR UPDATE) so two concurrent approve() calls
-    // for the same request serialize instead of racing on its status.
+    List<LeaveRequest> findByEmployee_NameContainingIgnoreCase(String name);
+
+    List<LeaveRequest> findAllByOrderByStartDateDesc();
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select lr from LeaveRequest lr where lr.id = :id")
     Optional<LeaveRequest> findByIdForUpdate(@Param("id") Long id);
